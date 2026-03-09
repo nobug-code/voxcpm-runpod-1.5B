@@ -24,9 +24,8 @@ COPY handler.py .
 # MODEL_PATH       : where the VoxCPM1.5 weights live on the Network Volume
 # ZIPENHANCER_PATH : where ZipEnhancer weights live on the Network Volume
 # ENABLE_DENOISER  : "1" to enable, "0" to disable
-ENV MODEL_PATH=/runpod-volume/VoxCPM1.5 \
-    ZIPENHANCER_PATH=/runpod-volume/zipenhancer \
-    ENABLE_DENOISER=1 \
-    PYTHONUNBUFFERED=1
+ENV VOXCPM_MODEL=openbmb/VoxCPM-1.5B
 
-CMD ["python", "-u", "handler.py"]
+
+CMD ["python", "-u", "./handler.py"]
+
