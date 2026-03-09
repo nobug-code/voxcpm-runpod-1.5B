@@ -1,0 +1,27 @@
+{
+  "tests": [
+    {
+      "name": "tts_basic",
+      "input": {
+        "text": "Hello, this is VoxCPM speaking.",
+        "cfg_value": 2.0,
+        "inference_timesteps": 10,
+        "output_format": "wav"
+      },
+      "timeout": 60000
+    },
+    {
+      "name": "tts_korean",
+      "input": {
+        "text": "안녕하세요, VoxCPM입니다.",
+        "cfg_value": 2.0,
+        "inference_timesteps": 10,
+        "output_format": "wav"
+      },
+      "timeout": 60000
+    }
+  ],
+  "config": {
+    "gpuTypeId": "NVIDIA GeForce RTX 4090"
+  }
+}
