@@ -1,100 +1,163 @@
-import os
-import io
 import base64
-import tempfile
+import io
+import os
+import requests
 
 import numpy as np
 import soundfile as sf
-import runpod  # Required
-
-MODEL_PATH = os.environ.get("MODEL_PATH", "/runpod-volume/VoxCPM1.5")
-ZIPENHANCER_PATH = os.environ.get("ZIPENHANCER_PATH", "/runpod-volume/zipenhancer")
-ENABLE_DENOISER = os.environ.get("ENABLE_DENOISER", "1") == "1"
-
-# Load model once at worker startup (outside handler to avoid re-initialization)
+import torch
+import torchaudio
+import runpod
 from voxcpm import VoxCPM
+from transformers.trainer_utils import set_seed
 
-_model = VoxCPM(
-    voxcpm_model_path=MODEL_PATH,
-    zipenhancer_model_path=ZIPENHANCER_PATH if ENABLE_DENOISER else None,
-    enable_denoiser=ENABLE_DENOISER,
-    optimize=True,
+# --- Env ---
+VOXCPM_MODEL = os.getenv("VOXCPM_MODEL", "openbmb/VoxCPM1.5")
+ZIPENHANCER_PATH = os.getenv("ZIPENHANCER_PATH", "/runpod-volume/zipenhancer")
+ENABLE_DENOISER = os.getenv("ENABLE_DENOISER", "1") == "1"
+DEFAULT_LANGUAGE = os.getenv("LANGUAGE", "en")
+
+# --- Device ---
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# --- Load once at startup ---
+print(f"[VoxCPM] Loading model '{VOXCPM_MODEL}' on {device}...")
+model = VoxCPM.from_pretrained(
+    hf_model_id=VOXCPM_MODEL,
+    load_denoiser=ENABLE_DENOISER,
+    zipenhancer_model_id=ZIPENHANCER_PATH,
 )
+
+# Store sample rate from the model
+SAMPLE_RATE = model.tts_model.sample_rate
+
+
+def split_text_chunks(text: str, max_length: int = 1400) -> list:
+    """
+    Split text into chunks that don't exceed the maximum character limit.
+    Tries to split at sentence boundaries when possible.
+    """
+    if len(text) <= max_length:
+        return [text]
+
+    chunks = []
+    remaining_text = text
+
+    while remaining_text:
+        if len(remaining_text) <= max_length:
+            chunks.append(remaining_text)
+            break
+
+        # Try to find a good breaking point (sentence end)
+        break_point = max_length
+        for i in range(max_length - 1, max(0, max_length - 200), -1):
+            if i < len(remaining_text) and remaining_text[i] in '.!?':
+                if i == len(remaining_text) - 1 or (i + 1 < len(remaining_text) and remaining_text[i + 1] == ' '):
+                    break_point = i + 1
+                    break
+
+        # If no good sentence break found, try to break at a space
+        if break_point == max_length:
+            for i in range(max_length - 1, max(0, max_length - 100), -1):
+                if remaining_text[i] == ' ':
+                    break_point = i
+                    break
+
+        chunk = remaining_text[:break_point].strip()
+        if chunk:
+            chunks.append(chunk)
+
+        remaining_text = remaining_text[break_point:].lstrip()
+
+    return chunks
+
+
+def synthesize_speech(text: str, prompt_text: str = None, prompt_wav_path: str = None, language: str = None, cfg_value_input: float = 2.0, inference_timesteps: int = 10, max_tokenlength: int = 4096) -> str:
+    """
+    Generate speech audio from text using VoxCPM and return base64-encoded WAV.
+    Handles text splitting for inputs exceeding 1400 characters.
+    """
+    text_chunks = split_text_chunks(text, max_length=1400)
+
+    all_audio_chunks = []
+
+    for i, chunk in enumerate(text_chunks):
+        print(f"[VoxCPM] Processing chunk {i+1}/{len(text_chunks)} ({len(chunk)} characters)")
+
+        current_prompt_text = prompt_text
+
+        chunk_audio_chunks = []
+        for chunk_audio in model.generate_streaming(chunk, prompt_wav_path, current_prompt_text, cfg_value_input, inference_timesteps, max_tokenlength):
+            chunk_audio_chunks.append(chunk_audio)
+
+        if not chunk_audio_chunks:
+            raise RuntimeError(f"VoxCPM did not return any audio chunks for chunk {i+1}.")
+
+        all_audio_chunks.extend(chunk_audio_chunks)
+
+    if not all_audio_chunks:
+        raise RuntimeError("VoxCPM did not return any audio chunks.")
+
+    audio = np.concatenate(all_audio_chunks)
+
+    if audio.dtype != np.float32:
+        audio = audio.astype(np.float32)
+
+    buf = io.BytesIO()
+    sf.write(buf, audio, SAMPLE_RATE, format="wav")
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("utf-8")
+
+
+def download_wav(url: str, save_path: str):
+    """Downloads a WAV file from a URL and saves it to a specified path."""
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with open(save_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        print(f"Successfully downloaded WAV from {url} to {save_path}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error downloading WAV from {url}: {e}")
+        raise
 
 
 def handler(job):
-    job_input = job["input"]
 
-    # Input validation
-    text = job_input.get("text", "").strip()
-    if not text:
-        return {"error": "input.text is required"}
+    job_input = job.get("input", {})
+    text = job_input.get("text")
+    prompt_text = job_input.get('prompt_text', None)
+    prompt_wav_url = job_input.get('prompt_wav_url', None)
+    inference_timesteps = job_input.get('inference_timesteps', 10)
+    cfg_value_input = job_input.get('cfg_value_input', 2.0)
+    max_tokenlength = job_input.get('max_tokenlength', 4096)
+    prompt_wav_path = None
 
-    prompt_wav_b64 = job_input.get("prompt_wav")
-    prompt_text = job_input.get("prompt_text")
+    if prompt_wav_url:
+        custom_wav_folder = "/workspace/customwav"
+        os.makedirs(custom_wav_folder, exist_ok=True)
+        filename = os.path.basename(prompt_wav_url)
+        if not filename:
+            filename = "downloaded_prompt.wav"
+        prompt_wav_path = os.path.join(custom_wav_folder, filename)
+        download_wav(prompt_wav_url, prompt_wav_path)
 
-    if bool(prompt_wav_b64) != bool(prompt_text):
-        return {"error": "prompt_wav and prompt_text must both be provided or both be omitted"}
+    language = job_input.get("language", DEFAULT_LANGUAGE)
 
-    cfg_value = float(job_input.get("cfg_value", 2.0))
-    inference_timesteps = int(job_input.get("inference_timesteps", 10))
-    normalize = bool(job_input.get("normalize", False))
-    denoise = bool(job_input.get("denoise", False))
-    retry_badcase = bool(job_input.get("retry_badcase", True))
-    output_format = job_input.get("output_format", "wav").lower()
-    if output_format not in ("wav", "mp3"):
-        output_format = "wav"
+    if not isinstance(text, str) or not text.strip():
+        return {"error": "Missing required 'text' (non-empty string)."}
 
-    runpod.serverless.progress_update(job, "Generating speech...")
-
-    tmp_prompt_path = None
     try:
-        if prompt_wav_b64:
-            wav_bytes = base64.b64decode(prompt_wav_b64)
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                f.write(wav_bytes)
-                tmp_prompt_path = f.name
-
-        wav: np.ndarray = _model.generate(
-            text=text,
-            prompt_wav_path=tmp_prompt_path,
-            prompt_text=prompt_text,
-            cfg_value=cfg_value,
-            inference_timesteps=inference_timesteps,
-            normalize=normalize,
-            denoise=denoise,
-            retry_badcase=retry_badcase,
-        )
-    finally:
-        if tmp_prompt_path and os.path.exists(tmp_prompt_path):
-            os.unlink(tmp_prompt_path)
-
-    runpod.serverless.progress_update(job, "Encoding audio...")
-
-    sample_rate = _model.tts_model.sample_rate
-    buf = io.BytesIO()
-
-    if output_format == "mp3":
-        try:
-            from pydub import AudioSegment
-            pcm_buf = io.BytesIO()
-            sf.write(pcm_buf, wav, sample_rate, format="WAV", subtype="PCM_16")
-            pcm_buf.seek(0)
-            AudioSegment.from_wav(pcm_buf).export(buf, format="mp3")
-        except ImportError:
-            sf.write(buf, wav, sample_rate, format="WAV")
-            output_format = "wav"
-    else:
-        sf.write(buf, wav, sample_rate, format="WAV")
-
-    buf.seek(0)
-
-    return {
-        "audio_base64": base64.b64encode(buf.read()).decode("utf-8"),
-        "sample_rate": sample_rate,
-        "duration_seconds": round(len(wav) / sample_rate, 3),
-        "output_format": output_format,
-    }
+        audio_b64 = synthesize_speech(text.strip(), prompt_text, prompt_wav_path, language, cfg_value_input, inference_timesteps, max_tokenlength)
+        return {"language": language, "audio_base64": audio_b64}
+    except Exception as e:
+        raise RuntimeError(f"Inference failed: {e}")
 
 
-runpod.serverless.start({"handler": handler})  # Required
+# Check if the script is run directly (for local testing or execution)
+if __name__ == "__main__":
+    runpod.serverless.start({"handler": handler})
+
+# This line is crucial for RunPod serverless execution
+runpod.serverless.start({"handler": handler})

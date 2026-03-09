@@ -3,3 +3,6 @@ voxcpm
 soundfile
 numpy
 pydub
+requests
+torchaudio
+transformers
