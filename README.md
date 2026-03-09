@@ -1,5 +1,7 @@
 # voxcpm-runpod
 
+[![Runpod](https://api.runpod.io/badge/nobug-code/voxcpm-runpod-1.5B)](https://console.runpod.io/hub/nobug-code/voxcpm-runpod-1.5B)
+
 RunPod Serverless worker for [VoxCPM1.5](https://github.com/OpenBMB/VoxCPM) — tokenizer-free TTS with voice cloning.
 
 ## Features
