@@ -1,0 +1,44 @@
+{
+  "title": "VoxCPM 1.5B TTS",
+  "description": "Tokenizer-free Text-to-Speech with zero-shot voice cloning. Supports TTS and voice cloning using VoxCPM1.5 (800M params, 44.1kHz, RTF ~0.15).",
+  "type": "serverless",
+  "category": "audio",
+  "iconUrl": "https://raw.githubusercontent.com/OpenBMB/VoxCPM/main/assets/voxcpm_logo.png",
+  "config": {
+    "runsOn": "GPU",
+    "containerDiskInGb": 20,
+    "presets": [
+      {
+        "name": "TTS only (no denoiser)",
+        "defaults": {
+          "ENABLE_DENOISER": "0"
+        }
+      },
+      {
+        "name": "TTS + Voice Cloning (with denoiser)",
+        "defaults": {
+          "ENABLE_DENOISER": "1"
+        }
+      }
+    ],
+    "env": [
+      {
+        "key": "MODEL_PATH",
+        "value": "/runpod-volume/VoxCPM1.5"
+      },
+      {
+        "key": "ZIPENHANCER_PATH",
+        "value": "/runpod-volume/zipenhancer"
+      },
+      {
+        "key": "ENABLE_DENOISER",
+        "input": {
+          "name": "Enable Denoiser",
+          "type": "string",
+          "description": "Set to 1 to enable ZipEnhancer denoising for voice cloning prompt audio. Requires ZipEnhancer weights on Network Volume.",
+          "default": "1"
+        }
+      }
+    ]
+  }
+}
