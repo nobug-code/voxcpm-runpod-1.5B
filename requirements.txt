@@ -1,8 +1,7 @@
-runpod>=1.7.0
-voxcpm
-soundfile
+torch==2.8.0
 numpy
-pydub
-requests
-torchaudio
+runpod
+soundfile
 transformers
+voxcpm
+requests

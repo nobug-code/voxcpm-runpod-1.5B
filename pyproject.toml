@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voxcpm-runpod"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+dependencies = [
+    "torch==2.8.0",
+    "numpy",
+    "runpod",
+    "soundfile",
+    "transformers",
+    "voxcpm==1.0.5",
+    "editdistance",
+    "funasr"
+]
+
+
