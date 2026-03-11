@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp /home/nk/projects/voxcpm-runpod/hub.json /home/nk/projects/cosyvoice-runpod/)",
+      "Bash(cp /home/nk/projects/voxcpm-runpod/LICENSE /home/nk/projects/cosyvoice-runpod/)",
+      "Bash(cp /home/nk/projects/voxcpm-runpod/pyproject.toml /home/nk/projects/cosyvoice-runpod/)",
+      "Bash(gh auth:*)",
+      "Bash(gh --version)"
+    ]
+  }
+}
