@@ -1,15 +1,17 @@
 {
   "tests": [
     {
-      "name": "test",
+      "name": "tts_test",
       "input": {
-        "text": "Hello, World!"
+        "tts_text": "안녕하세요, 반갑습니다.",
+        "instruct_text": "You are a helpful assistant.<|endofprompt|>",
+        "prompt_wav_b64": "base64 encoded wav file"
       },
-      "timeout": 40000
+      "timeout": 120000
     }
   ],
   "config": {
-    "gpuTypeId": "NVIDIA GeForce RTX 4090",
+    "gpuTypeId": "NVIDIA RTX A5000",
     "gpuCount": 1
   }
 }

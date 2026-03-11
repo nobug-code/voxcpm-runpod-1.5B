@@ -1,23 +1,32 @@
 {
-  "title": "voxcpm Runpod",
-  "description": "voxcpm for serverless",
+  "title": "CosyVoice3 TTS Runpod",
+  "description": "CosyVoice3 TTS for serverless inference",
   "type": "serverless",
   "category": "audio",
   "iconUrl": "https://avatars.githubusercontent.com/u/121991246",
   "config": {
     "runsOn": "GPU",
-    "containerDiskInGb": 40,
-    "gpuIds": "AMPERE_16",
-    "presets":[
-          {
-        "name": "vc",
+    "containerDiskInGb": 60,
+    "gpuIds": "AMPERE_24",
+    "presets": [
+      {
+        "name": "tts",
         "defaults": {
-          "text": "Hello World",
-          "prompt_text": "the text spoken in the wav",
-          "prompt_wav_url": "link to wav file use copy party"
+          "tts_text": "안녕하세요, 반갑습니다.",
+          "instruct_text": "You are a helpful assistant.<|endofprompt|>",
+          "prompt_wav_b64": "base64 encoded wav file"
         }
       }
     ],
-    "env": []
+    "env": [
+      {
+        "key": "HF_HOME",
+        "value": "/workspace/hf"
+      },
+      {
+        "key": "MODELSCOPE_CACHE",
+        "value": "/workspace/modelscope"
+      }
+    ]
   }
 }
